@@ -2129,18 +2129,7 @@ define apache::vhost(
       directoryindex => $directoryindex,
     }
 
-    if versioncmp($apache_version, '2.4') >= 0 {
-      $_directory_version = {
-        require => 'all granted',
-      }
-    } else {
-      $_directory_version = {
-        order => 'allow,deny',
-        allow => 'from all',
-      }
-    }
-
-    $_directories = [ merge($_directory, $_directory_version) ]
+    $_directories = $_directory
   } else {
     $_directories = undef
   }

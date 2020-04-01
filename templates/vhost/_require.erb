@@ -21,9 +21,6 @@
   <%- if _item['auth_require'] -%>
     Require <%= _item['auth_require'] %>
   <%- end -%>
-  <%- if !(_item['require'] && _item['require'] != '') && _item['require'] !~ /unmanaged/i && !(_item['auth_require']) -%>
-    Require all granted
-  <%- end -%>
 <%- else -%>
   <%- if _item['auth_require'] -%>
     Require <%= _item['auth_require'] %>
