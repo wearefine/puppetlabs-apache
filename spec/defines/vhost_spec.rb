@@ -1,10 +1,12 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'apache::vhost', type: :define do
   describe 'os-independent items' do
     on_supported_os.each do |os, facts|
       # this setup uses fastcgi wich isn't available on RHEL 7 / RHEL 8 / Ubuntu 18.04
-      next if facts[:os]['release']['major'] == '18.04'
+      next if facts[:os]['release']['major'] == '18.04' || facts[:os]['release']['major'] == '20.04'
       next if (facts[:os]['release']['major'] == '7' || facts[:os]['release']['major'] == '8') && facts[:os]['family']['RedHat']
       # next if facts[:os]['name'] == 'SLES'
 
@@ -85,6 +87,7 @@ describe 'apache::vhost', type: :define do
               'ssl_proxyengine'             => true,
               'ssl_proxy_cipher_suite'      => 'HIGH',
               'ssl_proxy_protocol'          => 'TLSv1.2',
+              'ssl_user_name'               => 'SSL_CLIENT_S_DN_CN',
               'priority'                    => '30',
               'default_vhost'               => true,
               'servername'                  => 'example.com',
@@ -159,6 +162,8 @@ describe 'apache::vhost', type: :define do
                   'index_style_sheet' => '/styles/style.css' },
                 { 'path'              => '/var/www/files/output_filtered',
                   'set_output_filter' => 'output_filter' },
+                { 'path'              => '/var/www/files/input_filtered',
+                  'set_input_filter' => 'input_filter' },
                 { 'path'     => '/var/www/files',
                   'provider' => 'location',
                   'limit'    => [
@@ -213,6 +218,7 @@ describe 'apache::vhost', type: :define do
                   'passenger_app_env'                                   => 'demo',
                   'passenger_app_root'                                  => '/var/www/node-app',
                   'passenger_app_group_name'                            => 'foo_bar',
+                  'passenger_app_start_command'                         => 'start-command',
                   'passenger_app_type'                                  => 'node',
                   'passenger_startup_file'                              => 'start.js',
                   'passenger_restart_dir'                               => 'temp',
@@ -239,13 +245,28 @@ describe 'apache::vhost', type: :define do
                   'passenger_max_request_queue_time'                    => 5,
                   'passenger_sticky_sessions'                           => true,
                   'passenger_sticky_sessions_cookie_name'               => '_delicious_cookie',
+                  'passenger_sticky_sessions_cookie_attributes'         => 'SameSite=Lax; Secure;',
                   'passenger_allow_encoded_slashes'                     => false,
+                  'passenger_app_log_file'                              => '/tmp/app.log',
                   'passenger_debugger'                                  => false,
+                  'gssapi'                                              => {
+                    'credstore' => 'keytab:/foo/bar.keytab',
+                    'localname' => 'On',
+                    'sslonly'   => 'Off',
+                  },
+                },
+                {
+                  'path'              => '/private_1',
+                  'provider'          => 'location',
+                  'ssl_options'       => ['+ExportCertData', '+StdEnvVars'],
+                  'ssl_verify_client' => 'optional',
+                  'ssl_verify_depth'  => '10',
                 },
               ],
               'error_log'                   => false,
               'error_log_file'              => 'httpd_error_log',
               'error_log_syslog'            => true,
+              'error_log_format'            => ['[%t] [%l] %7F: %E: [client\ %a] %M% ,\ referer\ %{Referer}i'],
               'error_documents'             => 'true',
               'fallbackresource'            => '/index.php',
               'scriptalias'                 => '/usr/lib/cgi-bin',
@@ -259,6 +280,10 @@ describe 'apache::vhost', type: :define do
                   'path'       => '/usr/share/fooscripts$1',
                 },
               ],
+              'limitreqfieldsize'           => 8190,
+              'limitreqfields'              => 100,
+              'limitreqline'                => 8190,
+              'limitreqbody'                => 0,
               'proxy_dest'                  => '/',
               'proxy_pass'                  => [
                 {
@@ -407,6 +432,7 @@ describe 'apache::vhost', type: :define do
               'passenger_app_env'                     => 'test',
               'passenger_app_root'                    => '/usr/share/myapp',
               'passenger_app_group_name'              => 'app_customer',
+              'passenger_app_start_command'           => 'start-my-app',
               'passenger_app_type'                    => 'rack',
               'passenger_startup_file'                => 'bin/www',
               'passenger_restart_dir'                 => 'tmp',
@@ -437,7 +463,9 @@ describe 'apache::vhost', type: :define do
               'passenger_max_request_queue_time'      => 2,
               'passenger_sticky_sessions'             => true,
               'passenger_sticky_sessions_cookie_name' => '_nom_nom_nom',
+              'passenger_sticky_sessions_cookie_attributes' => 'Nom=nom; Secure;',
               'passenger_allow_encoded_slashes'       => true,
+              'passenger_app_log_file'                => '/app/log/file',
               'passenger_debugger'                    => true,
               'passenger_lve_min_uid'                 => 500,
               'add_default_charset'         => 'UTF-8',
@@ -458,6 +486,15 @@ describe 'apache::vhost', type: :define do
               'max_keepalive_requests'      => '1000',
               'protocols'                   => ['h2', 'http/1.1'],
               'protocols_honor_order'       => true,
+              'auth_oidc'                   => true,
+              'oidc_settings'               => { 'ProviderMetadataURL'       => 'https://login.example.com/.well-known/openid-configuration',
+                                                 'ClientID'                  => 'test',
+                                                 'RedirectURI'               => 'https://login.example.com/redirect_uri',
+                                                 'ProviderTokenEndpointAuth' => 'client_secret_basic',
+                                                 'RemoteUserClaim'           => 'sub',
+                                                 'ClientSecret'              => 'aae053a9-4abf-4824-8956-e94b2af335c8',
+                                                 'CryptoPassphrase'          => '4ad1bb46-9979-450e-ae58-c696967df3cd' },
+              'mdomain'                     => 'example.com example.net auto',
             }
           end
 
@@ -510,6 +547,26 @@ describe 'apache::vhost', type: :define do
             }
           end
           it { is_expected.to contain_concat__fragment('rspec.example.com-apache-header') }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-apache-header').with(
+              content: %r{^\s+LimitRequestFieldSize 8190$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-apache-header').with(
+              content: %r{^\s+LimitRequestFields 100$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-apache-header').with(
+              content: %r{^\s+LimitRequestLine 8190$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-apache-header').with(
+              content: %r{^\s+LimitRequestBody 0$},
+            )
+          }
           it { is_expected.to contain_concat__fragment('rspec.example.com-docroot') }
           it { is_expected.to contain_concat__fragment('rspec.example.com-aliases') }
           it { is_expected.to contain_concat__fragment('rspec.example.com-itk') }
@@ -653,6 +710,11 @@ describe 'apache::vhost', type: :define do
           it {
             is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
               content: %r{^\s+SetOutputFilter\soutput_filter$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
+              content: %r{^\s+SetInputFilter\sinput_filter$},
             )
           }
           it {
@@ -875,8 +937,37 @@ describe 'apache::vhost', type: :define do
               content: %r{^\s+PassengerDebugger\sOff$},
             )
           }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
+              content: %r{^\s+GssapiCredStore\skeytab:/foo/bar.keytab$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
+              content: %r{^\s+GssapiSSLonly\sOff$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
+              content: %r{^\s+GssapiLocalName\sOn$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
+              content: %r{^\s+SSLVerifyClient\soptional$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-directories').with(
+              content: %r{^\s+SSLVerifyDepth\s10$},
+            )
+          }
           it { is_expected.to contain_concat__fragment('rspec.example.com-additional_includes') }
           it { is_expected.to contain_concat__fragment('rspec.example.com-logging') }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-logging')
+              .with_content(%r{^\s+ErrorLogFormat "\[%t\] \[%l\] %7F: %E: \[client\\ %a\] %M% ,\\ referer\\ %\{Referer\}i"$})
+          }
           it { is_expected.to contain_concat__fragment('rspec.example.com-serversignature') }
           it { is_expected.not_to contain_concat__fragment('rspec.example.com-access_log') }
           it { is_expected.to contain_concat__fragment('rspec.example.com-action') }
@@ -955,6 +1046,11 @@ describe 'apache::vhost', type: :define do
           it {
             is_expected.to contain_concat__fragment('rspec.example.com-ssl').with(
               content: %r{^\s+SSLOpenSSLConfCmd\s+DHParameters "foo.pem"$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-ssl').with(
+              content: %r{^\s+SSLUserName\s+SSL_CLIENT_S_DN_CN$},
             )
           }
           it { is_expected.to contain_concat__fragment('rspec.example.com-sslproxy') }
@@ -1376,6 +1472,47 @@ describe 'apache::vhost', type: :define do
           it {
             is_expected.to contain_concat__fragment('rspec.example.com-passenger').with(
               content: %r{^\s+PassengerLveMinUid\s500$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCProviderMetadataURL\shttps:\/\/login.example.com\/\.well-known\/openid-configuration$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCClientID\stest$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCRedirectURI\shttps:\/\/login\.example.com\/redirect_uri$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCProviderTokenEndpointAuth\sclient_secret_basic$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCRemoteUserClaim\ssub$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCClientSecret\saae053a9-4abf-4824-8956-e94b2af335c8$},
+            )
+          }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+              content: %r{^\s+OIDCCryptoPassphrase\s4ad1bb46-9979-450e-ae58-c696967df3cd$},
+            )
+          }
+          it { is_expected.to contain_class('apache::mod::md') }
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-apache-header').with(
+              content: %r{^MDomain example\.com example\.net auto$},
             )
           }
         end
@@ -1903,236 +2040,153 @@ describe 'apache::vhost', type: :define do
             }
           end
         end # access logs
-        describe 'validation' do
-          context 'bad ensure' do
-            let :params do
-              {
-                'docroot' => '/rspec/docroot',
-                'ensure'  => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad suphp_engine' do
-            let :params do
-              {
-                'docroot'      => '/rspec/docroot',
-                'suphp_engine' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad ip_based' do
-            let :params do
-              {
-                'docroot'  => '/rspec/docroot',
-                'ip_based' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad access_log' do
-            let :params do
-              {
-                'docroot'    => '/rspec/docroot',
-                'access_log' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad error_log' do
-            let :params do
-              {
-                'docroot'   => '/rspec/docroot',
-                'error_log' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad_ssl' do
-            let :params do
-              {
-                'docroot' => '/rspec/docroot',
-                'ssl'     => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad default_vhost' do
-            let :params do
-              {
-                'docroot'       => '/rspec/docroot',
-                'default_vhost' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad ssl_proxyengine' do
-            let :params do
+        describe 'error logs format' do
+          context 'on Apache 2.2' do
+            let(:params) do
               {
                 'docroot'         => '/rspec/docroot',
-                'ssl_proxyengine' => 'bogus',
+                'apache_version'  => '2.2',
+                'error_log_format' => ['[%t] [%l] %7F: %E: [client\ %a] %M% ,\ referer\ %{Referer}i'],
               }
             end
 
-            it { is_expected.to raise_error(Puppet::Error) }
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging')
+                .without_content(%r{ErrorLogFormat})
+            }
           end
-          context 'bad rewrites' do
-            let :params do
+
+          context 'single log format directive as a string' do
+            let(:params) do
               {
-                'docroot'  => '/rspec/docroot',
-                'rewrites' => 'bogus',
+                'docroot'          => '/rspec/docroot',
+                'apache_version'   => '2.4',
+                'error_log_format' => ['[%t] [%l] %7F: %E: [client\ %a] %M% ,\ referer\ %{Referer}i'],
               }
             end
 
-            it { is_expected.to raise_error(Puppet::Error) }
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging').with(
+                content: %r{^\s+ErrorLogFormat "\[%t\] \[%l\] %7F: %E: \[client\\ %a\] %M% ,\\ referer\\ %\{Referer\}i"$},
+              )
+            }
           end
+
+          context 'multiple log format directives' do
+            let(:params) do
+              {
+                'docroot'          => '/rspec/docroot',
+                'apache_version'   => '2.4',
+                'error_log_format' => [
+                  '[%{uc}t] [%-m:%-l] [R:%L] [C:%{C}L] %7F: %E: %M',
+                  { '[%{uc}t] [R:%L] Request %k on C:%{c}L pid:%P tid:%T' => 'request' },
+                  { "[%{uc}t] [R:%L] UA:'%+{User-Agent}i'" => 'request' },
+                  { "[%{uc}t] [R:%L] Referer:'%+{Referer}i'" => 'request' },
+                  { '[%{uc}t] [C:%{c}L] local\ %a remote\ %A' => 'connection' },
+                ],
+              }
+            end
+
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging').with(
+                content: %r{^\s+ErrorLogFormat "\[%\{uc\}t\] \[%-m:%-l\] \[R:%L\] \[C:%\{C\}L\] %7F: %E: %M"$},
+              )
+            }
+
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging').with(
+                content: %r{^\s+ErrorLogFormat request "\[%\{uc\}t\] \[R:%L\] Request %k on C:%\{c\}L pid:%P tid:%T"$},
+              )
+            }
+
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging').with(
+                content: %r{^\s+ErrorLogFormat request "\[%\{uc\}t\] \[R:%L\] UA:'%\+\{User-Agent\}i'"$},
+              )
+            }
+
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging').with(
+                content: %r{^\s+ErrorLogFormat request "\[%\{uc\}t\] \[R:%L\] Referer:'%\+\{Referer\}i'"$},
+              )
+            }
+
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-logging').with(
+                content: %r{^\s+ErrorLogFormat connection "\[%\{uc\}t\] \[C:%\{c\}L\] local\\ %a remote\\ %A"$},
+              )
+            }
+          end
+        end # error logs format
+        describe 'validation' do
+          let(:params) do
+            {
+              'docroot' => '/rspec/docroot',
+            }
+          end
+
+          [
+            'ensure', 'suphp_engine', 'ip_based', 'access_log', 'error_log',
+            'ssl', 'default_vhost', 'ssl_proxyengine', 'rewrites', 'suexec_user_group',
+            'wsgi_script_alias', 'wsgi_daemon_process_options',
+            'wsgi_import_script_alias', 'itk', 'logroot_ensure', 'log_level',
+            'fallbackresource'
+          ].each do |parameter|
+            context "bad #{parameter}" do
+              let(:params) { super().merge(parameter => 'bogus') }
+
+              it { is_expected.to raise_error(Puppet::Error) }
+            end
+          end
+
           context 'bad rewrites 2' do
-            let :params do
-              {
-                'docroot'  => '/rspec/docroot',
-                'rewrites' => ['bogus'],
-              }
-            end
+            let(:params) { super().merge('rewrites' => ['bogus']) }
 
             it { is_expected.to raise_error(Puppet::Error) }
           end
           context 'empty rewrites' do
-            let :params do
-              {
-                'docroot'  => '/rspec/docroot',
-                'rewrites' => [],
-              }
-            end
+            let(:params) { super().merge('rewrites' => []) }
 
             it { is_expected.to compile }
           end
-          context 'bad suexec_user_group' do
+          context 'bad error_log_format flag' do
             let :params do
-              {
-                'docroot'           => '/rspec/docroot',
-                'suexec_user_group' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad wsgi_script_alias' do
-            let :params do
-              {
-                'docroot'           => '/rspec/docroot',
-                'wsgi_script_alias' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad wsgi_daemon_process_options' do
-            let :params do
-              {
-                'docroot'                     => '/rspec/docroot',
-                'wsgi_daemon_process_options' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad wsgi_import_script_alias' do
-            let :params do
-              {
-                'docroot'                  => '/rspec/docroot',
-                'wsgi_import_script_alias' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad itk' do
-            let :params do
-              {
-                'docroot' => '/rspec/docroot',
-                'itk'     => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad logroot_ensure' do
-            let :params do
-              {
-                'docroot'   => '/rspec/docroot',
-                'log_level' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad log_level' do
-            let :params do
-              {
-                'docroot'   => '/rspec/docroot',
-                'log_level' => 'bogus',
-              }
+              super().merge(
+                'error_log_format' => [
+                  { 'some format' => 'bogus' },
+                ],
+              )
             end
 
             it { is_expected.to raise_error(Puppet::Error) }
           end
           context 'access_log_file and access_log_pipe' do
             let :params do
-              {
-                'docroot'         => '/rspec/docroot',
+              super().merge(
                 'access_log_file' => 'bogus',
                 'access_log_pipe' => 'bogus',
-              }
+              )
             end
 
             it { is_expected.to raise_error(Puppet::Error) }
           end
           context 'error_log_file and error_log_pipe' do
             let :params do
-              {
-                'docroot'        => '/rspec/docroot',
+              super().merge(
                 'error_log_file' => 'bogus',
                 'error_log_pipe' => 'bogus',
-              }
-            end
-
-            it { is_expected.to raise_error(Puppet::Error) }
-          end
-          context 'bad fallbackresource' do
-            let :params do
-              {
-                'docroot'          => '/rspec/docroot',
-                'fallbackresource' => 'bogus',
-              }
+              )
             end
 
             it { is_expected.to raise_error(Puppet::Error) }
           end
           context 'bad custom_fragment' do
-            let :params do
-              {
-                'docroot'         => '/rspec/docroot',
-                'custom_fragment' => true,
-              }
-            end
+            let(:params) { super().merge('custom_fragment' => true) }
 
             it { is_expected.to raise_error(Puppet::Error) }
           end
           context 'bad access_logs' do
-            let :params do
-              {
-                'docroot'     => '/rspec/docroot',
-                'access_logs' => '/var/log/somewhere',
-              }
-            end
+            let(:params) { super().merge('access_logs' => '/var/log/somewhere') }
 
             it { is_expected.to raise_error(Puppet::Error) }
           end
@@ -2187,34 +2241,80 @@ describe 'apache::vhost', type: :define do
             }
           end
           describe 'redirectmatch_*' do
-            let :dparams do
-              {
-                docroot: '/rspec/docroot',
-                port: '84',
-              }
-            end
+            let(:params) { super().merge(port: '84') }
 
             context 'status' do
-              let(:params) { dparams.merge(redirectmatch_status: '404') }
+              let(:params) { super().merge(redirectmatch_status: '404') }
 
               it { is_expected.to contain_class('apache::mod::alias') }
             end
             context 'dest' do
-              let(:params) { dparams.merge(redirectmatch_dest: 'http://other.example.com$1.jpg') }
+              let(:params) { super().merge(redirectmatch_dest: 'http://other.example.com$1.jpg') }
 
               it { is_expected.to contain_class('apache::mod::alias') }
             end
             context 'regexp' do
-              let(:params) { dparams.merge(redirectmatch_regexp: "(.*)\.gif$") }
+              let(:params) { super().merge(redirectmatch_regexp: "(.*)\.gif$") }
 
               it { is_expected.to contain_class('apache::mod::alias') }
             end
             context 'none' do
-              let(:params) { dparams }
-
               it { is_expected.not_to contain_class('apache::mod::alias') }
             end
           end
+        end
+        context 'oidc_settings RedirectURL' do
+          describe 'with VALID relative URI' do
+            let :params do
+              default_params.merge(
+                'auth_oidc' => true,
+                'oidc_settings' => { 'ProviderMetadataURL' => 'https://login.example.com/.well-known/openid-configuration',
+                                     'ClientID'                  => 'test',
+                                     'RedirectURI'               => '/some/valid/relative/uri',
+                                     'ProviderTokenEndpointAuth' => 'client_secret_basic',
+                                     'RemoteUserClaim'           => 'sub',
+                                     'ClientSecret'              => 'aae053a9-4abf-4824-8956-e94b2af335c8',
+                                     'CryptoPassphrase'          => '4ad1bb46-9979-450e-ae58-c696967df3cd' },
+              )
+            end
+
+            it { is_expected.to compile }
+            it {
+              is_expected.to contain_concat__fragment('rspec.example.com-auth_oidc').with(
+                content: %r{^\s+OIDCRedirectURI\s/some/valid/relative/uri$},
+              )
+            }
+          end
+
+          describe 'with INVALID relative URI' do
+            let :params do
+              default_params.merge(
+                'auth_oidc' => true,
+                'oidc_settings' => { 'ProviderMetadataURL' => 'https://login.example.com/.well-known/openid-configuration',
+                                     'ClientID'                  => 'test',
+                                     'RedirectURI'               => 'invalid_uri',
+                                     'ProviderTokenEndpointAuth' => 'client_secret_basic',
+                                     'RemoteUserClaim'           => 'sub',
+                                     'ClientSecret'              => 'aae053a9-4abf-4824-8956-e94b2af335c8',
+                                     'CryptoPassphrase'          => '4ad1bb46-9979-450e-ae58-c696967df3cd' },
+              )
+            end
+
+            it { is_expected.not_to compile }
+          end
+        end
+        context 'mdomain' do
+          let :params do
+            default_params.merge(
+              'mdomain' => true,
+            )
+          end
+
+          it {
+            is_expected.to contain_concat__fragment('rspec.example.com-apache-header').with(
+              content: %r{^MDomain rspec.example.com$},
+            )
+          }
         end
       end
     end

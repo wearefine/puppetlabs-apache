@@ -1,18 +1,10 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'apache::mod::remoteip', type: :class do
   context 'on a Debian OS' do
-    let :facts do
-      {
-        osfamily: 'Debian',
-        operatingsystemrelease: '8',
-        lsbdistcodename: 'jessie',
-        operatingsystem: 'Debian',
-        id: 'root',
-        kernel: 'Linux',
-        path: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-      }
-    end
+    include_examples 'Debian 8'
     let :params do
       { apache_version: '2.4' }
     end
@@ -90,12 +82,34 @@ describe 'apache::mod::remoteip', type: :class do
       it { is_expected.to contain_file('remoteip.conf').with_content(%r{^RemoteIPTrustedProxy 10.42.17.8$}) }
       it { is_expected.to contain_file('remoteip.conf').with_content(%r{^RemoteIPTrustedProxy 10.42.18.99$}) }
     end
+    describe 'with proxy_protocol_exceptions => [ 10.42.17.8, 10.42.18.99 ]' do
+      let :params do
+        { proxy_protocol_exceptions: ['10.42.17.8', '10.42.18.99'] }
+      end
+
+      it { is_expected.to contain_file('remoteip.conf').with_content(%r{^RemoteIPProxyProtocolExceptions 10.42.17.8$}) }
+      it { is_expected.to contain_file('remoteip.conf').with_content(%r{^RemoteIPProxyProtocolExceptions 10.42.18.99$}) }
+    end
+    describe 'with IPv4 CIDR in proxy_protocol_exceptions => [ 192.168.1.0/24 ]' do
+      let :params do
+        { proxy_protocol_exceptions: ['192.168.1.0/24'] }
+      end
+
+      it { is_expected.to contain_file('remoteip.conf').with_content(%r{^RemoteIPProxyProtocolExceptions 192.168.1.0/24$}) }
+    end
+    describe 'with IPv6 CIDR in proxy_protocol_exceptions => [ fd00:fd00:fd00:2000::/64 ]' do
+      let :params do
+        { proxy_protocol_exceptions: ['fd00:fd00:fd00:2000::/64'] }
+      end
+
+      it { is_expected.to contain_file('remoteip.conf').with_content(%r{^RemoteIPProxyProtocolExceptions fd00:fd00:fd00:2000::/64$}) }
+    end
     describe 'with Apache version < 2.4' do
       let :params do
         { apache_version: '2.2' }
       end
 
-      it { expect { catalogue }.to raise_error(Puppet::Error, %r{mod_remoteip is only available in Apache 2.4}) }
+      it { is_expected.to compile.and_raise_error(%r{mod_remoteip is only available in Apache 2.4}) }
     end
   end
 end

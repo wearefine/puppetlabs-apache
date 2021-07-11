@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'spec_helper'
 
 describe 'apache::mod::auth_cas', type: :class do
@@ -22,18 +24,7 @@ describe 'apache::mod::auth_cas', type: :class do
     end
 
     context 'on a Debian OS', :compile do
-      let :facts do
-        {
-          id: 'root',
-          kernel: 'Linux',
-          lsbdistcodename: 'jessie',
-          osfamily: 'Debian',
-          operatingsystem: 'Debian',
-          operatingsystemrelease: '8',
-          path: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-          is_pe: false,
-        }
-      end
+      include_examples 'Debian 8'
 
       it { is_expected.to contain_class('apache::params') }
       it { is_expected.to contain_apache__mod('auth_cas') }
@@ -42,17 +33,7 @@ describe 'apache::mod::auth_cas', type: :class do
       it { is_expected.to contain_file('/var/cache/apache2/mod_auth_cas/').with_owner('www-data') }
     end
     context 'on a RedHat OS', :compile do
-      let :facts do
-        {
-          id: 'root',
-          kernel: 'Linux',
-          osfamily: 'RedHat',
-          operatingsystem: 'RedHat',
-          operatingsystemrelease: '6',
-          path: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-          is_pe: false,
-        }
-      end
+      include_examples 'RedHat 6'
 
       it { is_expected.to contain_class('apache::params') }
       it { is_expected.to contain_apache__mod('auth_cas') }
@@ -63,20 +44,10 @@ describe 'apache::mod::auth_cas', type: :class do
 
     context 'vhost setup', :compile do
       let :pre_condition do
-        "class { 'apache': } apache::vhost { 'test.server': docroot => '/var/www/html', cas_root_proxied_as => 'http://test.server'} "
+        "class { 'apache': } apache::vhost { 'test.server': docroot => '/var/www/html', cas_root_proxied_as => 'http://test.server', cas_cookie_path => '/my/cas/path'} "
       end
 
-      let :facts do
-        {
-          id: 'root',
-          kernel: 'Linux',
-          osfamily: 'RedHat',
-          operatingsystem: 'RedHat',
-          operatingsystemrelease: '6',
-          path: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-          is_pe: false,
-        }
-      end
+      include_examples 'RedHat 6'
 
       it { is_expected.to contain_class('apache::params') }
       it { is_expected.to contain_apache__mod('auth_cas') }
@@ -85,6 +56,7 @@ describe 'apache::mod::auth_cas', type: :class do
       it { is_expected.to contain_file('/var/cache/mod_auth_cas/').with_owner('apache') }
       it {
         is_expected.to contain_concat__fragment('test.server-auth_cas').with(content: %r{^\s+CASRootProxiedAs http://test.server$})
+        is_expected.to contain_concat__fragment('test.server-auth_cas').with(content: %r{^\s+CASCookiePath /my/cas/path$})
       }
     end
   end

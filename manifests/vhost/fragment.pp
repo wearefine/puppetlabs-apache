@@ -53,8 +53,9 @@
 #     content  => '# Foo',
 #   }
 #
-define apache::vhost::fragment(
+define apache::vhost::fragment (
   String[1] $vhost,
+  Optional[Integer[0]] $port = undef,
   $priority = undef,
   Optional[String] $content = undef,
   Integer[0] $order = 900,
@@ -68,7 +69,10 @@ define apache::vhost::fragment(
     $priority_real = '25-'
   }
 
-  $filename = regsubst($vhost, ' ', '_', 'G')
+  $filename = $port ? {
+    Integer => regsubst("${vhost}-${port}", ' ', '_', 'G'),
+    Undef   => regsubst($vhost, ' ', '_', 'G'),
+  }
 
   if $content =~ String[1] {
     concat::fragment { "${vhost}-${title}":

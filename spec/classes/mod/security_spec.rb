@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 
 require 'spec_helper'
 
@@ -23,25 +24,22 @@ describe 'apache::mod::security', type: :class do
               lib: 'mod_unique_id.so',
             )
           }
+
           it { is_expected.to contain_package('mod_security_crs') }
-          if facts[:os]['release']['major'].to_i > 6 && facts[:os]['release']['major'].to_i <= 7
+
+          if (facts[:os]['release']['major'].to_i > 6 && facts[:os]['release']['major'].to_i <= 7) || (facts[:os]['release']['major'].to_i >= 8)
             it {
               is_expected.to contain_file('security.conf').with(
                 path: '/etc/httpd/conf.modules.d/security.conf',
               )
             }
           end
-          if facts[:os]['release']['major'].to_i >= 8
-            it {
-              is_expected.to contain_file('security.conf').with(
-                path: '/etc/httpd/conf.d/security.conf',
-              )
-            }
-          end
+
           it {
             is_expected.to contain_file('security.conf')
               .with_content(%r{^\s+SecAuditLogRelevantStatus "\^\(\?:5\|4\(\?!04\)\)"$})
               .with_content(%r{^\s+SecAuditLogParts ABIJDEFHZ$})
+              .with_content(%r{^\s+SecAuditLogType Serial$})
               .with_content(%r{^\s+SecDebugLog /var/log/httpd/modsec_debug.log$})
               .with_content(%r{^\s+SecAuditLog /var/log/httpd/modsec_audit.log$})
           }
@@ -78,12 +76,16 @@ describe 'apache::mod::security', type: :class do
                 ],
                 audit_log_relevant_status: '^(?:5|4(?!01|04))',
                 audit_log_parts: 'ABCDZ',
+                audit_log_type: 'Concurrent',
+                audit_log_storage_dir: '/var/log/httpd/audit',
                 secdefaultaction: 'deny,status:406,nolog,auditlog',
               }
             end
 
             it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogRelevantStatus "\^\(\?:5\|4\(\?!01\|04\)\)"$} }
             it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogParts ABCDZ$} }
+            it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogType Concurrent$} }
+            it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogStorageDir /var/log/httpd/audit$} }
             it { is_expected.to contain_file('/etc/httpd/modsecurity.d/security_crs.conf').with_content %r{^\s*SecDefaultAction "phase:2,deny,status:406,nolog,auditlog"$} }
             it {
               is_expected.to contain_file('bar.conf').with(
@@ -126,6 +128,7 @@ describe 'apache::mod::security', type: :class do
             is_expected.to contain_file('security.conf')
               .with_content(%r{^\s+SecAuditLogRelevantStatus "\^\(\?:5\|4\(\?!04\)\)"$})
               .with_content(%r{^\s+SecAuditLogParts ABIJDEFHZ$})
+              .with_content(%r{^\s+SecAuditLogType Serial$})
               .with_content(%r{^\s+SecDebugLog /var/log/apache2/modsec_debug.log$})
               .with_content(%r{^\s+SecAuditLog /var/log/apache2/modsec_audit.log$})
           }
@@ -165,6 +168,8 @@ describe 'apache::mod::security', type: :class do
                 ],
                 audit_log_relevant_status: '^(?:5|4(?!01|04))',
                 audit_log_parts: 'ABCDZ',
+                audit_log_type: 'Concurrent',
+                audit_log_storage_dir: '/var/log/httpd/audit',
                 secdefaultaction: 'deny,status:406,nolog,auditlog',
               }
             end
@@ -173,6 +178,7 @@ describe 'apache::mod::security', type: :class do
                (facts[:os]['release']['major'].to_i < 9 && facts[:os]['name'] == 'Debian')
               it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogRelevantStatus "\^\(\?:5\|4\(\?!01\|04\)\)"$} }
               it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogParts ABCDZ$} }
+              it { is_expected.to contain_file('security.conf').with_content %r{^\s+SecAuditLogStorageDir /var/log/httpd/audit$} }
               it { is_expected.to contain_file('/etc/modsecurity/security_crs.conf').with_content %r{^\s*SecDefaultAction "phase:2,deny,status:406,nolog,auditlog"$} }
               it {
                 is_expected.to contain_file('bar.conf').with(

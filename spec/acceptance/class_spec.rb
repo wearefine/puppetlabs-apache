@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'spec_helper_acceptance'
 apache_hash = apache_settings_hash
 describe 'apache class' do
@@ -42,6 +44,7 @@ describe 'apache class' do
         if $::osfamily == 'RedHat' and "$::selinux" == "true" {
           $semanage_package = $::operatingsystemmajrelease ? {
             '5'     => 'policycoreutils',
+            '8'     => 'policycoreutils-python-utils',
             default => 'policycoreutils-python',
           }
 

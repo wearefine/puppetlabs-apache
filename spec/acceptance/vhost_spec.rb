@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'spec_helper_acceptance'
 apache_hash = apache_settings_hash
 describe 'apache::vhost define' do
@@ -23,11 +25,11 @@ describe 'apache::vhost define' do
       apply_manifest(pp, catch_failures: true)
     end
 
-    describe file("#{apache_hash['vhost_dir']}/15-default.conf") do
+    describe file("#{apache_hash['vhost_dir']}/15-default-80.conf") do
       it { is_expected.not_to be_file }
     end
 
-    describe file("#{apache_hash['vhost_dir']}/15-default-ssl.conf") do
+    describe file("#{apache_hash['vhost_dir']}/15-default-ssl-443.conf") do
       it { is_expected.not_to be_file }
     end
   end
@@ -40,16 +42,16 @@ describe 'apache::vhost define' do
       apply_manifest(pp, catch_failures: true)
     end
 
-    describe file("#{apache_hash['vhost_dir']}/15-default.conf") do
+    describe file("#{apache_hash['vhost_dir']}/15-default-80.conf") do
       it { is_expected.to contain '<VirtualHost \*:80>' }
     end
 
-    describe file("#{apache_hash['vhost_dir']}/15-default-ssl.conf") do
+    describe file("#{apache_hash['vhost_dir']}/15-default-ssl-443.conf") do
       it { is_expected.not_to be_file }
     end
   end
 
-  context 'default vhost with ssl', unless: (os[:family] =~ %r{redhat} && os[:release].to_i == 8) do
+  context 'default vhost with ssl', unless: (os[:family].include?('redhat') && os[:release].to_i == 8) do
     pp = <<-MANIFEST
       file { '#{apache_hash['run_dir']}':
         ensure  => 'directory',
@@ -65,11 +67,11 @@ describe 'apache::vhost define' do
       apply_manifest(pp, catch_failures: true)
     end
 
-    describe file("#{apache_hash['vhost_dir']}/15-default.conf") do
+    describe file("#{apache_hash['vhost_dir']}/15-default-80.conf") do
       it { is_expected.to contain '<VirtualHost \*:80>' }
     end
 
-    describe file("#{apache_hash['vhost_dir']}/15-default-ssl.conf") do
+    describe file("#{apache_hash['vhost_dir']}/15-default-ssl-443.conf") do
       it { is_expected.to contain '<VirtualHost \*:443>' }
       it { is_expected.to contain 'SSLEngine on' }
     end
@@ -752,7 +754,7 @@ describe 'apache::vhost define' do
     end
   end
 
-  describe 'parameter tests', unless: (os[:family] =~ %r{redhat} && os[:release].to_i == 8) do
+  describe 'parameter tests', if: mod_supported_on_platform?('apache::mod::itk') do
     pp = <<-MANIFEST
       class { 'apache': }
       host { 'test.itk': ip => '127.0.0.1' }
@@ -769,10 +771,11 @@ describe 'apache::vhost define' do
         priority => false,
         docroot => '/tmp'
       }
-      apache::vhost { 'test.ssl_protool':
-        docroot      => '/tmp',
-        ssl          => true,
-        ssl_protocol => ['All', '-SSLv2'],
+      apache::vhost { 'test.ssl_protocol':
+        docroot       => '/tmp',
+        ssl           => true,
+        ssl_protocol  => ['All', '-SSLv2'],
+        ssl_user_name => 'SSL_CLIENT_S_DN_CN',
       }
       apache::vhost { 'test.block':
         docroot  => '/tmp',
@@ -873,9 +876,10 @@ describe 'apache::vhost define' do
     describe file("#{apache_hash['vhost_dir']}/test.without_priority_prefix.conf") do
       it { is_expected.to be_file }
     end
-    describe file("#{apache_hash['vhost_dir']}/25-test.ssl_protool.conf") do
+    describe file("#{apache_hash['vhost_dir']}/25-test.ssl_protocol.conf") do
       it { is_expected.to be_file }
       it { is_expected.to contain 'SSLProtocol  *All -SSLv2' }
+      it { is_expected.to contain 'SSLUserName  *SSL_CLIENT_S_DN_CN' }
     end
     describe file("#{apache_hash['vhost_dir']}/25-test.block.conf") do
       it { is_expected.to be_file }
@@ -945,6 +949,58 @@ describe 'apache::vhost define' do
     describe file("#{apache_hash['vhost_dir']}/25-test.options.conf") do
       it { is_expected.to be_file }
       it { is_expected.to contain 'Options Indexes FollowSymLinks ExecCGI' }
+    end
+  end
+
+  context 'when a manifest defines $servername' do
+    describe 'when the $use_servername_for_filenames parameter is set to true' do
+      pp = <<-MANIFEST
+          class { 'apache': }
+          host { 'test.server': ip => '127.0.0.1' }
+          apache::vhost { 'test.server':
+            use_servername_for_filenames  => true,
+            servername                    => 'test.servername',
+            docroot                       => '/tmp',
+            logroot                       => '/tmp',
+          }
+      MANIFEST
+      it 'applies cleanly and DOES NOT print warning about $use_servername_for_filenames usage for test.server vhost' do
+        result = apply_manifest(pp, catch_failures: true)
+        expect(result.stderr).not_to contain %r{
+          .*Warning\:\sScope\(Apache::Vhost\[test\.server\]\)\:.*
+          It\sis\spossible\sfor\sthe\s\$name\sparameter.*
+          sanitized\s\$servername\sparameter\swhen\snot\sexplicitly\sdefined\.
+        }xm
+      end
+      describe file("#{apache_hash['vhost_dir']}/25-test.servername.conf") do
+        it { is_expected.to be_file }
+        it { is_expected.to contain '  ErrorLog "/tmp/test.servername_error.log' }
+        it { is_expected.to contain '  CustomLog "/tmp/test.servername_access.log' }
+      end
+    end
+    describe 'when the $use_servername_for_filenames parameter is NOT defined' do
+      pp = <<-MANIFEST
+          class { 'apache': }
+          host { 'test.server': ip => '127.0.0.1' }
+          apache::vhost { 'test.server':
+            servername                    => 'test.servername',
+            docroot                       => '/tmp',
+            logroot                       => '/tmp',
+          }
+      MANIFEST
+      it 'applies cleanly and prints warning about $use_servername_for_filenames usage for test.server vhost' do
+        result = apply_manifest(pp, catch_failures: true)
+        expect(result.stderr).to contain %r{
+          .*Warning\:\sScope\(Apache::Vhost\[test\.server\]\)\:.*
+          It\sis\spossible\sfor\sthe\s\$name\sparameter.*
+          sanitized\s\$servername\sparameter\swhen\snot\sexplicitly\sdefined\.
+        }xm
+      end
+      describe file("#{apache_hash['vhost_dir']}/25-test.server.conf") do
+        it { is_expected.to be_file }
+        it { is_expected.to contain '  ErrorLog "/tmp/test.server_error.log' }
+        it { is_expected.to contain '  CustomLog "/tmp/test.server_access.log' }
+      end
     end
   end
 
@@ -1027,7 +1083,7 @@ describe 'apache::vhost define' do
       }
     MANIFEST
     it 'applies cleanly' do
-      pp += "\nclass { 'apache::mod::actions': }" if os[:family] =~ %r{debian|suse|ubuntu|sles}
+      pp += "\nclass { 'apache::mod::actions': }" if %r{debian|suse|ubuntu|sles}.match?(os[:family])
       apply_manifest(pp, catch_failures: true)
     end
 
@@ -1103,7 +1159,7 @@ describe 'apache::vhost define' do
   end
 
   describe 'wsgi' do
-    context 'filter on OS', unless: (os[:family] =~ %r{sles|redhat}) do
+    context 'filter on OS', if: mod_supported_on_platform?('apache::mod::wsgi') do
       pp = <<-MANIFEST
       class { 'apache': }
       class { 'apache::mod::wsgi': }
@@ -1144,14 +1200,15 @@ describe 'apache::vhost define' do
       if $::osfamily == 'RedHat' and "$::selinux" == "true" {
         $semanage_package = $::operatingsystemmajrelease ? {
           '5'     => 'policycoreutils',
+          '8'     => 'policycoreutils-python-utils',
           default => 'policycoreutils-python',
         }
+        package { $semanage_package: ensure => installed }
         exec { 'set_apache_defaults':
           command => 'semanage fcontext -a -t httpd_sys_content_t "/apache_spec(/.*)?"',
           path    => '/bin:/usr/bin/:/sbin:/usr/sbin',
           require => Package[$semanage_package],
         }
-        package { $semanage_package: ensure => installed }
         exec { 'restorecon_apache':
           command => 'restorecon -Rv /apache_spec',
           path    => '/bin:/usr/bin/:/sbin:/usr/sbin',
@@ -1169,7 +1226,7 @@ describe 'apache::vhost define' do
       }
     MANIFEST
     it 'applies cleanly' do
-      apply_manifest(pp, catch_failures: true)
+      apply_manifest(pp, catch_failures: false)
     end
 
     describe file("#{apache_hash['vhost_dir']}/25-test.server.conf") do
@@ -1195,6 +1252,41 @@ describe 'apache::vhost define' do
     describe file("#{apache_hash['vhost_dir']}/25-test.server.conf") do
       it { is_expected.to be_file }
       it { is_expected.to contain 'ShibCompatValidUser On' }
+    end
+  end
+
+  # IAC-587: These tests do not currently run successfully on certain RHEL OSs due to dependency issues with the
+  # mod_auth_openidc module.
+  describe 'auth_oidc', if: mod_supported_on_platform?('apache::mod::authnz_ldap') do
+    pp = <<-MANIFEST
+        class { 'apache': }
+        apache::vhost { 'test.server':
+          port    => '80',
+          docroot => '/var/www/html',
+          auth_oidc     => true,
+          oidc_settings => {
+            'ProviderMetadataURL'       => 'https://login.example.com/.well-known/openid-configuration',
+            'ClientID'                  => 'test',
+            'RedirectURI'               => 'https://login.example.com/redirect_uri',
+            'ProviderTokenEndpointAuth' => 'client_secret_basic',
+            'RemoteUserClaim'           => 'sub',
+            'ClientSecret'              => 'aae053a9-4abf-4824-8956-e94b2af335c8',
+            'CryptoPassphrase'          => '4ad1bb46-9979-450e-ae58-c696967df3cd'
+          }
+        }
+    MANIFEST
+    it 'applys cleanly' do
+      apply_manifest(pp, catch_failures: true)
+    end
+    describe file("#{apache_hash['vhost_dir']}/25-test.server.conf") do
+      it { is_expected.to be_file }
+      it { is_expected.to contain 'OIDCProviderMetadataURL https://login.example.com/.well-known/openid-configuration' }
+      it { is_expected.to contain 'OIDCClientID test' }
+      it { is_expected.to contain 'OIDCRedirectURI https://login.example.com/redirect_uri' }
+      it { is_expected.to contain 'OIDCProviderTokenEndpointAuth client_secret_basic' }
+      it { is_expected.to contain 'OIDCRemoteUserClaim sub' }
+      it { is_expected.to contain 'OIDCClientSecret aae053a9-4abf-4824-8956-e94b2af335c8' }
+      it { is_expected.to contain 'OIDCCryptoPassphrase 4ad1bb46-9979-450e-ae58-c696967df3cd' }
     end
   end
 end
