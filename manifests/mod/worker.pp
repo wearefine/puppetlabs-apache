@@ -49,6 +49,7 @@ class apache::mod::worker (
   $maxsparethreads     = '75',
   $threadsperchild     = '25',
   $maxrequestsperchild = '0',
+  $maxrequestworkers   = '200',
   $serverlimit         = '25',
   $threadlimit         = '64',
   $listenbacklog       = '511',
@@ -82,6 +83,7 @@ class apache::mod::worker (
   # - $maxsparethreads
   # - $threadsperchild
   # - $maxrequestsperchild
+  # - $maxrequestworkers
   # - $serverlimit
   # - $threadLimit
   # - $listenbacklog
